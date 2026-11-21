@@ -1,0 +1,17 @@
+__pycache__/
+.pytest_cache/
+config.yaml
+build/
+tools/
+
+gps_internet/.pairing-token
+gps_internet/pairing*
+android_app/tools/
+android_app/build/
+android_app/signing/
+
+gps_internet/.relay-reader-token
+gps_internet/relay-config.json
+gps_internet/relay-status.json
+gps_relay/private/
+gps_relay/dist/

@@ -1,0 +1,39 @@
+import {PRESENTATION_DEMO} from '../services/api';
+import React,{useEffect,useRef,useState} from 'react';
+import {useLiveTelemetry} from '../services/useLiveTelemetry';
+import {normalizedQuaternion,relativeOrientation,rotate,toScene,IDENTITY,Quaternion,Vector3} from '../services/truckOrientation';
+import {fmt} from '../services/api';
+type Face={points:Vector3[],color:string};
+const faces:Face[]=[];
+function box(x:number,y:number,z:number,l:number,w:number,h:number,color:string){
+ const p:Vector3[]=[[x-l/2,y-w/2,z-h/2],[x+l/2,y-w/2,z-h/2],[x+l/2,y+w/2,z-h/2],[x-l/2,y+w/2,z-h/2],[x-l/2,y-w/2,z+h/2],[x+l/2,y-w/2,z+h/2],[x+l/2,y+w/2,z+h/2],[x-l/2,y+w/2,z+h/2]];
+ for(const f of [[0,1,2,3],[4,7,6,5],[0,4,5,1],[1,5,6,2],[2,6,7,3],[3,7,4,0]])faces.push({points:f.map(i=>p[i]),color});
+}
+box(0,0,.6,6.8,2,.3,'#475569');box(-.7,0,1.55,4.7,2.15,1.65,'#2563eb');box(2.55,0,1.25,1.7,2.1,1.7,'#06b6d4');box(2.6,0,2.15,1.7,2.14,.18,'#38bdf8');box(3.42,0,1.8,.04,1.7,.62,'#bae6fd');box(3.45,-.75,.88,.06,.35,.22,'#fef08a');box(3.45,.75,.88,.06,.35,.22,'#fef08a');box(3.45,0,.55,.16,2.2,.18,'#94a3b8');
+for(const x of [-2.3,-1.15,2.5])for(const y of [-1.12,1.12]){
+ const n=16,r=.49,z=.5,half=.19;
+ for(let i=0;i<n;i++){const a=i*2*Math.PI/n,b=(i+1)*2*Math.PI/n;faces.push({color:'#0f172a',points:[[x+r*Math.cos(a),y-half,z+r*Math.sin(a)],[x+r*Math.cos(b),y-half,z+r*Math.sin(b)],[x+r*Math.cos(b),y+half,z+r*Math.sin(b)],[x+r*Math.cos(a),y+half,z+r*Math.sin(a)]]});}
+ for(const side of [-half,half])faces.push({color:'#64748b',points:Array.from({length:n},(_,i)=>[x+r*.65*Math.cos(i*2*Math.PI/n),y+side,z+r*.65*Math.sin(i*2*Math.PI/n)] as Vector3)});
+}
+function draw(canvas:HTMLCanvasElement,q:Quaternion,view:number){
+ const rect=canvas.getBoundingClientRect(),dpr=Math.min(devicePixelRatio||1,2);canvas.width=rect.width*dpr;canvas.height=rect.height*dpr;
+ const ctx=canvas.getContext('2d');if(!ctx)return;ctx.scale(dpr,dpr);const width=rect.width,height=rect.height;ctx.clearRect(0,0,width,height);
+ const yaw=view,pitch=.42,scale=Math.min(width/12,height/8);
+ function camera(v:Vector3):Vector3 {const x=v[0]*Math.cos(yaw)+v[2]*Math.sin(yaw),z=-v[0]*Math.sin(yaw)+v[2]*Math.cos(yaw);return[x,v[1]*Math.cos(pitch)-z*Math.sin(pitch),v[1]*Math.sin(pitch)+z*Math.cos(pitch)];}
+ function project(v:Vector3):[number,number]{const perspective=15/(15-v[2]);return[width/2+v[0]*scale*perspective,height*.59-v[1]*scale*perspective];}
+ const line=(a:Vector3,b:Vector3,color:string)=>{ctx.beginPath();ctx.moveTo(...project(camera(a)));ctx.lineTo(...project(camera(b)));ctx.strokeStyle=color;ctx.lineWidth=1;ctx.stroke();};
+ for(let n=-5;n<=5;n++){line([n,-1, -5],[n,-1,5],'#1e293b');line([-5,-1,n],[5,-1,n],'#1e293b');}
+ const transformed=faces.map(f=>({...f,points:f.points.map(p=>camera(toScene(rotate([p[0],p[1],p[2]-1],q))))})).sort((a,b)=>a.points.reduce((s,p)=>s+p[2],0)/a.points.length-b.points.reduce((s,p)=>s+p[2],0)/b.points.length);
+ for(const f of transformed){ctx.beginPath();f.points.forEach((p,i)=>{const xy=project(p);i?ctx.lineTo(...xy):ctx.moveTo(...xy)});ctx.closePath();ctx.fillStyle=f.color;ctx.fill();ctx.strokeStyle='#02061788';ctx.lineWidth=1;ctx.stroke();}
+ for(const [v,color,label] of [[[2,0,0],'#f87171','X · nose'],[[0,2,0],'#4ade80','Y · left'],[[0,0,2],'#60a5fa','Z · roof']] as [Vector3,string,string][]){const p=camera(toScene(rotate(v,q))),o=project(camera([0,0,0])),e=project(p);ctx.beginPath();ctx.moveTo(...o);ctx.lineTo(...e);ctx.strokeStyle=color;ctx.lineWidth=2;ctx.stroke();ctx.fillStyle=color;ctx.font='12px system-ui';ctx.fillText(label,e[0]+5,e[1]);}
+}
+export function TruckDynamicsView(){
+ const t=useLiveTelemetry(),canvas=useRef<HTMLCanvasElement>(null),last=useRef<Quaternion|null>(null),[reference,setReference]=useState<Quaternion|null>(null),[view,setView]=useState(-.65);
+ const q=t.imuReady?normalizedQuaternion(t.packet?.canonical?.imu?.quaternion):null;if(q)last.current=q;
+ const orientation=relativeOrientation(last.current||IDENTITY,reference),orientationKey=JSON.stringify(orientation);
+ useEffect(()=>{const element=canvas.current;if(!element)return;const render=()=>draw(element,orientation,view);render();const observer=new ResizeObserver(render);observer.observe(element);return()=>observer.disconnect();},[orientationKey,view]);
+ const i=t.packet?.imu,age=t.sourceAge('imu');
+ const initFailed=t.online && t.packet?.gateway_health?.metrics?.esp_diagnostic?.imu_init_ok===false;
+ const fault=initFailed?'BNO085 initialization failed on ESP32. Power-cycle the ESP32 and IMU; the Pi connection is working.':t.online?'No fresh IMU orientation. Check IMU status in Advanced Settings.':'Pi feed unavailable. Check the bridge connection.';
+ return <div className="space-y-5"><section className="bg-slate-900 rounded-xl border border-slate-700 p-5"><div className="flex flex-wrap justify-between items-center gap-3"><div><h2 className="text-lg font-bold text-white">Truck Dynamics</h2><p className="text-sm text-slate-400">3D attitude driven by the BNO085 quaternion · rotation only</p></div><span className={q?'text-emerald-400':'text-amber-400'}>{q?(PRESENTATION_DEMO?'Synthetic IMU animation':'IMU live'):last.current?'IMU unavailable · last pose held':'Waiting for IMU · reference model'}</span></div><div className="mt-3 text-sm text-amber-300" role="status">{!q && fault}</div><div className="relative mt-3 rounded-xl bg-slate-950 overflow-hidden"><canvas ref={canvas} className="w-full h-[420px]" role="img" aria-label={q?(PRESENTATION_DEMO?'3D truck following synthetic orientation':'3D truck following live IMU orientation'):'3D truck reference or held orientation; IMU unavailable'}/>{!q&&<div className="absolute top-4 left-4 text-sm text-amber-300 bg-slate-900/90 p-3 rounded-lg">{last.current?'Last valid pose — no fresh IMU reading':'Reference pose — no live orientation yet'}</div>}</div><div className="flex flex-wrap gap-3 items-center mt-4 text-sm"><button disabled={!q} onClick={()=>q&&setReference(q)} className="px-4 py-2 rounded-lg bg-blue-600 text-white disabled:opacity-40">Set current pose as level</button><button onClick={()=>setReference(null)} className="px-4 py-2 rounded-lg bg-slate-800 text-white">Use sensor reference</button><label className="text-slate-300">View angle <input aria-label="3D view angle" type="range" min="-3.14" max="3.14" step=".05" value={view} onChange={e=>setView(Number(e.target.value))}/></label><span className="text-slate-400">{reference?'Relative to your level pose':'Sensor reference'}</span></div><p className="text-xs text-slate-400 mt-3">Mounting assumption: sensor X points toward the truck nose, Y to its left, Z toward its roof. Set level with the sensor mounted on a level truck. This changes the display reference only; physical mounting axes still need verification. The view control rotates the camera.</p></section><section className="grid grid-cols-2 lg:grid-cols-4 gap-3">{[['Roll',q?fmt(i?.roll)+'°':'—'],['Pitch',q?fmt(i?.pitch)+'°':'—'],['Yaw',q?fmt(i?.yaw)+'°':'—'],['Source age',age==null?'—':(age/1000).toFixed(2)+' s'],['Linear acceleration X / Y / Z',q?[i?.lin_accel_x,i?.lin_accel_y,i?.lin_accel_z].map(v=>fmt(v,3)).join(' / ')+' m/s²':'—'],['Gyro X / Y / Z',q?[i?.gyro_x,i?.gyro_y,i?.gyro_z].map(v=>fmt(v,2)).join(' / ')+' °/s':'—'],['Source time',t.packet?.canonical?.imu?.received_at||'Waiting'],['Orientation reports',q?'Valid quaternion':'Unavailable']].map(([label,value])=><div key={label} className="bg-slate-900 border border-slate-700 rounded-xl p-4"><p className="text-xs text-slate-400">{label}</p><p className="text-sm text-white mt-2 break-words">{value}</p></div>)}</section><p className="text-xs text-slate-400">The IMU measures attitude and motion; it does not provide GPS position or reliable vehicle speed. The model does not animate travel or invent movement. Source acquisition remains on the ESP32 and Pi.</p></div>;
+}

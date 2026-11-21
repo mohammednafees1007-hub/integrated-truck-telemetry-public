@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "boot_id",
+    "seq",
+    "status",
+    "face_detected",
+    "results",
+    "captured_at",
+    "inference_completed_at"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "boot_id": {
+      "type": "string"
+    },
+    "seq": {
+      "type": "integer"
+    },
+    "status": {
+      "enum": [
+        "unconfigured",
+        "unavailable",
+        "ok",
+        "no_face",
+        "stale"
+      ]
+    },
+    "face_detected": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "results": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "captured_at": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "inference_completed_at": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  }
+}

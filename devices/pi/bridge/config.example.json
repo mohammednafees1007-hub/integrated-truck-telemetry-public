@@ -1,0 +1,6 @@
+{
+  "public_origin": "https://REPLACE.trycloudflare.com",
+  "base_path": "/truck-tracking",
+  "device_key": "REPLACE_WITH_PRIVATE_PI_DEVICE_KEY",
+  "reader_key": "REPLACE_WITH_PRIVATE_PI_READER_KEY"
+}

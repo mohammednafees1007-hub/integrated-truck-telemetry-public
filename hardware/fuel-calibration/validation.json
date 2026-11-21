@@ -1,0 +1,48 @@
+{
+  "Open_Tank_500mL_MAX": {
+    "size_mm": [
+      106.0,
+      86.0,
+      74.0
+    ],
+    "closed_mesh": true,
+    "one_solid": true
+  },
+  "23.22mm_Probe_Clip_Holder": {
+    "size_mm": [
+      33.99409334221855,
+      41.0,
+      46.492645263671875
+    ],
+    "closed_mesh": true,
+    "one_solid": true
+  },
+  "Optional_Pressfit_Test": {
+    "size_mm": [
+      33.99992327630753,
+      33.98798751831055,
+      5.0
+    ],
+    "closed_mesh": true,
+    "one_solid": true
+  },
+  "dimensions": {
+    "inner_mm": [
+      100,
+      80,
+      70
+    ],
+    "outer_mm": [
+      106,
+      86,
+      74
+    ],
+    "500mL_depth_mm": 62.5,
+    "headroom_mm": 7.5,
+    "ring_bore_mm": 23.1,
+    "measured_probe_OD_mm": 23.22,
+    "ring_lower_face_above_rim_mm": 30,
+    "ring_lower_face_above_500mL_mm": 37.5,
+    "physical_fit_verified": false
+  }
+}

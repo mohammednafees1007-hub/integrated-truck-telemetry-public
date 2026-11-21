@@ -1,0 +1,226 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "v": {
+      "const": 1
+    },
+    "boot": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "t_us": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "imu": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {
+            "type": "number"
+          }
+        },
+        "g": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {
+            "type": "number"
+          }
+        },
+        "q": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "minItems": 4,
+          "maxItems": 4,
+          "items": {
+            "type": "number"
+          }
+        },
+        "n": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          }
+        },
+        "us": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          }
+        },
+        "s": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          }
+        },
+        "state": {
+          "enum": [
+            "ok",
+            "waiting",
+            "stale",
+            "disconnected",
+            "invalid",
+            "unconfigured"
+          ]
+        }
+      },
+      "required": [
+        "a",
+        "g",
+        "q",
+        "n",
+        "us",
+        "s",
+        "state"
+      ],
+      "additionalProperties": false
+    },
+    "us": {
+      "type": "object",
+      "properties": {
+        "mm": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "echo_us": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "n": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "t_us": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "state": {
+          "enum": [
+            "ok",
+            "waiting",
+            "stale",
+            "disconnected",
+            "invalid",
+            "unconfigured"
+          ]
+        }
+      },
+      "required": [
+        "mm",
+        "echo_us",
+        "n",
+        "t_us",
+        "state"
+      ],
+      "additionalProperties": false
+    },
+    "rfid": {
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "event": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "t_us": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "state": {
+          "enum": [
+            "ok",
+            "waiting",
+            "stale",
+            "disconnected",
+            "invalid",
+            "unconfigured"
+          ]
+        }
+      },
+      "required": [
+        "uid",
+        "event",
+        "t_us",
+        "state"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "v",
+    "boot",
+    "seq",
+    "t_us",
+    "imu",
+    "us",
+    "rfid"
+  ],
+  "additionalProperties": false
+}

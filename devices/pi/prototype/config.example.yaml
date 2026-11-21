@@ -1,0 +1,18 @@
+device_id: truck_esp32_01
+vehicle_id: veh-1
+host: 0.0.0.0
+port: 8765
+serial_port: auto
+baud: 460800
+origins: []
+freshness:
+  imu: 0.25
+  ultrasonic: 1.0
+  gps: 3.0
+camera:
+  port: 8766
+  enabled: false
+  preview: false
+  width: 640
+  height: 480
+  target_fps: 5

@@ -1,0 +1,18 @@
+* text=auto
+*.sh text eol=lf
+*.py text eol=lf
+*.php text eol=lf
+*.cmd text eol=crlf
+*.apk binary
+*.onnx binary
+*.pth binary
+*.rknn binary
+*.png binary
+*.jpg binary
+*.ttf binary
+
+*.webm binary
+*.step binary
+*.stp binary
+
+*.3mf binary

@@ -1,0 +1,54 @@
+# Local runtime, secrets, captures and installed dependencies
+.env
+.env.*
+!.env.example
+.private/
+**/config.yaml
+**/bridge/config.json
+**/bridge/config.json.*
+**/relay-config.json
+**/relay-config*.json
+**/signing/
+*.p12
+*.jks
+*.keystore
+*.pem
+*.key
+**/local.properties
+**/runtime-private/
+**/recordings/
+**/captures/
+**/data/
+*.sqlite*
+*.db
+*.log
+*.log.*
+node_modules/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.tools/
+build/
+dist/
+output/
+# Installed SDKs/toolchains are restored from upstream, not committed
+apps/android-gps/tools/
+devices/pi/prototype/tools/
+# Keep the reviewed, installable APK in releases/android
+!releases/
+!releases/android/
+!releases/android/PiGPS.apk
+!releases/android/PiGPS.apk.sha256
+
+**/php_backend/private/config.php
+**/.pairing-token
+**/.relay-reader-token
+**/*-token
+**/relay-status.json
+**/gps_internet/pairing*
+**/config.js
+
+# Real face footage and local calibration/capture artifacts stay on the laptop
+**/fatigue-camera-demo*
+**/fatigue-capture/

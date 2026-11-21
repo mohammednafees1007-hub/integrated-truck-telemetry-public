@@ -1,0 +1,552 @@
+import { PI_LIVE, PRESENTATION_DEMO } from './api';
+import {demoSnapshot} from './presentationDemo';
+import { esp32SensorService } from './esp32SensorService';
+import { apiUrl } from './api';
+import { DriverMonitoringData, DriverMonitoringSettings } from '../types';
+import { clientVisionEngine } from './clientVisionEngine';
+import { piFreshness } from './piFreshness';
+
+class DriverMonitoringService {
+  private data: DriverMonitoringData;
+  private settings: DriverMonitoringSettings;
+  private subscribers: ((data: DriverMonitoringData) => void)[] = [];
+  private intervalId: NodeJS.Timeout | null = null;
+  private backendFallbackUntil = 0;
+
+  // PERCLOS & blink/yawn tracking history
+  private eyeStatusHistory: { timestamp: number; isOpen: boolean }[] = [];
+  private blinkTimestamps: number[] = [];
+  private wasEyesClosed = false;
+  private eyeClosedStartTime = 0;
+  private wasYawning = false;
+  private yawnStartTime = 0;
+
+  constructor() {
+    this.settings = {
+      perclosWindow: 60,
+      eyeClosureThreshold: 0.8,
+      longEyeClosureDuration: 2000,
+      yawnDurationThreshold: 3000,
+      lookingAwayDurationThreshold: 3000,
+      fatigueScoreThresholds: {
+        attention: 30,
+        drowsy: 50,
+        critical: 70
+      },
+      cameraFps: 30,
+      inferenceFps: 10,
+      mode: PI_LIVE ? 'RASPBERRY_PI_LIVE' : 'DEMO',
+      backendUrl: 'http://localhost:8000'
+    };
+
+    this.data = this.getInitialData();
+    if(PI_LIVE) this.syncPi();
+  }
+
+  private getInitialData(): DriverMonitoringData {
+    return {
+      driverId: 'DRV001',
+      vehicleId: 'TN-01-AB-4821',
+      faceDetected: false,
+      leftEye: 'unknown',
+      rightEye: 'unknown',
+      perclos: 0,
+      blinkRate: 0,
+      mouthState: 'normal',
+      yawnDetected: false,
+      yawnDuration: 0,
+      yawnCount: 0,
+      headPose: { yaw: 0, pitch: 0, roll: 0 },
+      lookingAway: false,
+      fatigueScore: 0,
+      fatigueState: PI_LIVE ? 'UNAVAILABLE' : 'NORMAL',
+      inferenceMode: PI_LIVE ? 'RASPBERRY_PI_LIVE' : 'DEMO',
+      cameraStatus: 'DISCONNECTED',
+      aiBackendStatus: 'DISCONNECTED',
+      isModelOnline: false,
+      modelEngine: 'PYTHON_ONNX_NEURAL',
+      timestamp: new Date().toISOString()
+    };
+  }
+
+  public subscribe(callback: (data: DriverMonitoringData) => void) {
+    this.subscribers.push(callback);
+    callback(this.data);
+    return () => {
+      this.subscribers = this.subscribers.filter(s => s !== callback);
+    };
+  }
+
+  private notify() {
+    this.subscribers.forEach(s => s({ ...this.data }));
+  }
+
+  public async syncModelStatus(): Promise<void> {
+    if(PRESENTATION_DEMO) {this.syncPresentation();return;}
+    if(PI_LIVE) { this.syncPi(); return; }
+    try {
+      const resp = await fetch(apiUrl('/api/model/status'));
+      const contentType = resp.headers.get('content-type') || '';
+      if (resp.ok && contentType.includes('application/json')) {
+        const json = await resp.json();
+        this.data.isModelOnline = !!json.online;
+        this.data.aiBackendStatus = json.status || (json.online ? 'CONNECTED' : 'DISCONNECTED');
+        if (json.engine) {
+          this.data.modelEngine = json.engine;
+        }
+        this.notify();
+        return;
+      }
+    } catch {
+      // In Vercel or without local server, fallback to client-native edge AI
+    }
+
+    // Default Vercel / Client-Native state
+    this.data.isModelOnline = this.data.isModelOnline !== false;
+    this.data.aiBackendStatus = 'CONNECTED';
+    if (!this.data.modelEngine || this.data.modelEngine === 'OFFLINE') {
+      this.data.modelEngine = 'BROWSER_ONNX_NEURAL (WASM 98-Point)';
+    }
+    this.notify();
+  }
+
+  public async toggleModel(enable?: boolean): Promise<boolean> {
+    if(PRESENTATION_DEMO) {this.syncPresentation();return this.data.isModelOnline;}
+    if(PI_LIVE) { this.syncPi(); return this.data.isModelOnline; }
+    const nextState = enable !== undefined ? enable : !this.data.isModelOnline;
+    this.data.isModelOnline = nextState;
+    this.data.aiBackendStatus = nextState ? 'CONNECTED' : 'DISCONNECTED';
+    this.notify();
+
+    try {
+      const resp = await fetch(apiUrl('/api/model/toggle'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: nextState })
+      });
+      const contentType = resp.headers.get('content-type') || '';
+      if (resp.ok && contentType.includes('application/json')) {
+        const json = await resp.json();
+        this.data.isModelOnline = !!json.online;
+        this.data.aiBackendStatus = json.status;
+        if (json.engine) {
+          this.data.modelEngine = json.engine;
+        }
+      }
+    } catch {
+      // If Vercel or offline, keep local state
+    }
+
+    this.notify();
+    return this.data.isModelOnline;
+  }
+
+  public start() {
+    if(PRESENTATION_DEMO) {
+      this.syncPresentation();
+      if(!this.intervalId)this.intervalId=setInterval(()=>this.syncPresentation(),250);
+      return;
+    }
+    // Initial sync with backend
+    this.syncModelStatus();
+
+    if (this.intervalId) return;
+    this.intervalId = setInterval(() => {
+      if (this.settings.mode === 'DEMO') {
+        this.updateDemoData();
+      }
+      if(PI_LIVE) this.syncPi();
+      else this.calculatePerclos();
+      this.notify();
+    }, 1000 / this.settings.inferenceFps);
+  }
+
+  public stop() {
+    if (this.intervalId) {
+      clearInterval(this.intervalId);
+      this.intervalId = null;
+    }
+  }
+
+  public setMode(mode: "DEMO" | "LAPTOP_WEBCAM" | "RASPBERRY_PI_LIVE") {
+    if(PRESENTATION_DEMO)return;
+    if(PI_LIVE && mode!=='RASPBERRY_PI_LIVE') return;
+    this.settings.mode = mode;
+    this.data.inferenceMode = mode;
+    this.eyeStatusHistory = [];
+    this.blinkTimestamps = [];
+    this.wasEyesClosed = false;
+    this.wasYawning = false;
+    
+    // Reset data when switching modes
+    if (mode === 'DEMO') {
+      this.data.cameraStatus = 'CONNECTED';
+      this.data.faceDetected = true;
+      this.data.aiBackendStatus = this.data.isModelOnline ? 'CONNECTED' : 'DISCONNECTED';
+      this.data.fatigueScore = 18;
+      this.data.fatigueState = 'NORMAL';
+    } else {
+      this.data.cameraStatus = 'DISCONNECTED';
+      this.data.faceDetected = false;
+      this.data.aiBackendStatus = this.data.isModelOnline ? 'CONNECTED' : 'DISCONNECTED';
+      this.data.leftEye = 'unknown';
+      this.data.rightEye = 'unknown';
+      this.data.mouthState = 'normal';
+      this.data.lookingAway = false;
+      this.data.headPose = { yaw: 0, pitch: 0, roll: 0 };
+      this.data.fatigueScore = 0;
+      this.data.fatigueState = 'NORMAL';
+      this.data.perclos = 0;
+    }
+    
+    this.notify();
+  }
+
+  private syncPresentation() {
+    const p=demoSnapshot(),c=p.camera,v=c.results,online=p.transport_status==='connected';
+    Object.assign(this.data,{driverId:'DRV001',vehicleId:'veh-1',inferenceMode:'DEMO',isModelOnline:online,aiBackendStatus:online?'CONNECTED':'DISCONNECTED',cameraStatus:online?'CONNECTED':'DISCONNECTED',modelEngine:'SYNTHETIC EXPLANATION — NO AI INFERENCE',faceDetected:!!v,fatigueScore:v?.fatigue_score??null,fatigueState:v?.fatigue_state??'UNAVAILABLE',leftEye:v?.left_eye_status??'unknown',rightEye:v?.right_eye_status??'unknown',mouthState:v?.mouth_status??'unknown',yawnDetected:v?.mouth_status==='yawn',yawnDuration:null,yawnCount:v?.total_yawns??null,blinkRate:v?.blink_rate_bpm??null,perclos:null,headPose:v?.head_pose??{yaw:null,pitch:null,roll:null},timestamp:p.timestamp});
+    this.notify();
+  }
+
+  private syncPi() {
+    const p=esp32SensorService.piPacket,c=p?.camera;
+    const active=piFreshness(p).cameraReady;
+    const v=active && c.face_detected?c.results:null;
+    Object.assign(this.data,{driverId:p?.rfid?.driver_id??'',vehicleId:p?.vehicle_id??'',inferenceMode:'RASPBERRY_PI_LIVE',faceDetected:!!v,isModelOnline:active,aiBackendStatus:active?'CONNECTED':'DISCONNECTED',cameraStatus:active?'CONNECTED':'DISCONNECTED',modelEngine:c?.status==='no_face'?'PI · NO FACE':'RASPBERRY_PI_ONNX',fatigueState:v?.fatigue_state??'UNAVAILABLE',fatigueScore:v?.fatigue_score??null,leftEye:v?.left_eye_status??'unknown',rightEye:v?.right_eye_status??'unknown',mouthState:v?.mouth_status??'unknown',blinkRate:v?.blink_rate_bpm??null,yawnCount:v?.total_yawns??null,yawnDuration:null,perclos:null,headPose:v?.head_pose??{yaw:null,pitch:null,roll:null},yawnDetected:v?.mouth_status==='yawn',lookingAway:false,timestamp:c?.captured_at??null});
+    this.notify();
+  }
+
+  public setCameraStatus(status: DriverMonitoringData['cameraStatus']) {
+    this.data.cameraStatus = status;
+    this.notify();
+  }
+
+  private isProcessing = false;
+  private lastProcessTime = 0;
+
+  private updateTemporalMetrics(now: number) {
+    // 1. Track blink transitions and blink rate (blinks per minute)
+    const eyesClosed = this.data.faceDetected && (this.data.leftEye === 'closed' && this.data.rightEye === 'closed');
+    if (eyesClosed && !this.wasEyesClosed) {
+      this.wasEyesClosed = true;
+      this.eyeClosedStartTime = now;
+    } else if (!eyesClosed && this.wasEyesClosed) {
+      const closedDurationMs = now - this.eyeClosedStartTime;
+      this.wasEyesClosed = false;
+      // Count natural & drowsy blinks between 60ms and 1500ms
+      if (closedDurationMs >= 60 && closedDurationMs <= 1500) {
+        this.blinkTimestamps.push(now);
+      }
+    }
+    this.blinkTimestamps = this.blinkTimestamps.filter(ts => now - ts < 60000);
+    this.data.blinkRate = this.blinkTimestamps.length;
+
+    // 2. Track yawn rising-edge count and duration (seconds)
+    const isYawning = this.data.faceDetected && this.data.yawnDetected;
+    if (isYawning && !this.wasYawning) {
+      this.wasYawning = true;
+      this.yawnStartTime = now;
+      this.data.yawnCount++;
+      this.data.yawnDuration = 0.2;
+    } else if (isYawning && this.wasYawning) {
+      this.data.yawnDuration = parseFloat(((now - this.yawnStartTime) / 1000).toFixed(1));
+    } else if (!isYawning && this.wasYawning) {
+      this.wasYawning = false;
+    }
+  }
+
+  public async processFrame(canvas: HTMLCanvasElement) {
+    if(PI_LIVE) return;
+    if (this.settings.mode === 'DEMO') return;
+    if (!this.data.isModelOnline) return;
+
+    // Throttle inference
+    const now = Date.now();
+    if (this.isProcessing || now - this.lastProcessTime < 90) return;
+
+    this.isProcessing = true;
+    this.lastProcessTime = now;
+
+    // Detect if running on Vercel cloud or if temporary backend retry cooldown is active
+    const isVercelHost = typeof window !== 'undefined' && (
+      window.location.hostname.includes('vercel.app') ||
+      window.location.hostname.includes('.run.app')
+    );
+
+    if (isVercelHost || now < this.backendFallbackUntil) {
+      await this.applyClientVision(canvas);
+      this.isProcessing = false;
+      return;
+    }
+    
+    try {
+      const imageData = canvas.toDataURL('image/jpeg', 0.65);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
+      
+      const response = await fetch(apiUrl('/api/inference/frame'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          image: imageData,
+          driverId: this.data.driverId,
+          vehicleId: this.data.vehicleId
+        }),
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      const contentType = response.headers.get('content-type') || '';
+      if (!response.ok || !contentType.includes('application/json')) {
+        throw new Error('Backend not returning JSON');
+      }
+      
+      const result = await response.json();
+
+      if (result.modelOnline === false) {
+        this.data.isModelOnline = false;
+        this.data.aiBackendStatus = 'DISCONNECTED';
+        this.notify();
+        return;
+      }
+
+      // If local server indicates Python backend is not running, delegate to browser WASM ONNX engine
+      if (result.modelEngine === 'CLIENT_BROWSER_VISION') {
+        this.backendFallbackUntil = Date.now() + 4000;
+        await this.applyClientVision(canvas);
+        return;
+      }
+
+      // If Python ONNX backend is online and genuinely reports no face detected, respect that!
+      if (!result.faceDetected) {
+        this.data.faceDetected = false;
+        this.data.faceBox = undefined;
+        this.data.faceLandmarks = undefined;
+        this.data.leftEye = 'unknown';
+        this.data.rightEye = 'unknown';
+        this.data.mouthState = 'normal';
+        this.data.yawnDetected = false;
+        this.data.lookingAway = false;
+        this.data.fatigueScore = 0;
+        this.data.fatigueState = 'NORMAL';
+        this.data.aiBackendStatus = 'CONNECTED';
+        this.data.isModelOnline = true;
+        if (result.modelEngine) {
+          this.data.modelEngine = result.modelEngine;
+        }
+        this.updateTemporalMetrics(now);
+        return;
+      }
+      
+      // Update data with real Python ONNX inference results
+      this.data.faceDetected = true;
+      this.data.faceBox = result.faceBox;
+      this.data.faceLandmarks = result.faceLandmarks;
+      this.data.leftEye = result.leftEye === 'closed' ? 'closed' : 'open';
+      this.data.rightEye = result.rightEye === 'closed' ? 'closed' : 'open';
+      
+      let mouthState: 'normal' | 'open' | 'yawn' = 'normal';
+      if (result.mouthState === 'yawn' || result.mouthState === 'yawning') {
+        mouthState = 'yawn';
+      } else if (result.mouthState === 'open') {
+        mouthState = 'open';
+      }
+      this.data.mouthState = mouthState;
+      this.data.yawnDetected = mouthState === 'yawn';
+      this.data.headPose = result.headPose || { yaw: 0, pitch: 0, roll: 0 };
+      this.data.fatigueScore = typeof result.fatigueScore === 'number' ? result.fatigueScore : 0;
+      this.data.fatigueState = result.fatigueState || 'NORMAL';
+      this.data.aiBackendStatus = 'CONNECTED';
+      this.data.isModelOnline = true;
+      if (result.modelEngine) {
+        this.data.modelEngine = result.modelEngine;
+      }
+
+      this.data.lookingAway = Math.abs(this.data.headPose.yaw) > 28 || Math.abs(this.data.headPose.pitch) > 22;
+      this.updateTemporalMetrics(now);
+
+    } catch {
+      // Backend temporarily unavailable: use client WASM ONNX engine for 5 seconds, then retry backend
+      this.backendFallbackUntil = Date.now() + 5000;
+      await this.applyClientVision(canvas);
+    } finally {
+      this.isProcessing = false;
+      this.data.timestamp = new Date().toISOString();
+      this.notify();
+    }
+  }
+
+  private async applyClientVision(canvas: HTMLCanvasElement) {
+    const now = Date.now();
+    const res = await clientVisionEngine.analyze(canvas);
+    this.data.faceDetected = res.faceDetected;
+    this.data.faceBox = res.faceBox;
+    this.data.faceLandmarks = res.faceLandmarks;
+    this.data.leftEye = res.leftEye;
+    this.data.rightEye = res.rightEye;
+    this.data.mouthState = res.mouthState;
+    this.data.yawnDetected = res.mouthState === 'yawn';
+    this.data.headPose = res.headPose;
+    this.data.fatigueScore = res.fatigueScore;
+    this.data.fatigueState = res.fatigueState;
+    this.data.aiBackendStatus = 'CONNECTED';
+    this.data.isModelOnline = true;
+    this.data.modelEngine = res.modelEngine;
+
+    if (res.headPose && res.faceDetected) {
+      this.data.lookingAway = Math.abs(res.headPose.yaw) > 28 || Math.abs(res.headPose.pitch) > 22;
+    } else {
+      this.data.lookingAway = false;
+    }
+
+    this.updateTemporalMetrics(now);
+    this.data.timestamp = new Date().toISOString();
+    this.notify();
+  }
+
+  private calculatePerclos() {
+    const now = Date.now();
+    const windowMs = this.settings.perclosWindow * 1000;
+    
+    // Add current eye status if we have detection
+    if (this.data.faceDetected && (this.data.leftEye !== 'unknown')) {
+      const isOpen = this.data.leftEye === 'open' && this.data.rightEye === 'open';
+      this.eyeStatusHistory.push({ timestamp: now, isOpen });
+    }
+
+    // Clean old history
+    this.eyeStatusHistory = this.eyeStatusHistory.filter(h => now - h.timestamp < windowMs);
+
+    if (this.eyeStatusHistory.length >= 4) {
+      const closedCount = this.eyeStatusHistory.filter(h => !h.isOpen).length;
+      this.data.perclos = (closedCount / this.eyeStatusHistory.length) * 100;
+    }
+  }
+
+  public updateSettings(settings: Partial<DriverMonitoringSettings>) {
+    this.settings = { ...this.settings, ...settings, ...(PI_LIVE?{mode:'RASPBERRY_PI_LIVE' as const,backendUrl:''}:{}) };
+    this.notify();
+  }
+
+  public getSettings() {
+    return this.settings;
+  }
+
+  public setDriverInfo(driverId: string, vehicleId: string) {
+    this.data.driverId = driverId;
+    this.data.vehicleId = vehicleId;
+    this.notify();
+  }
+
+  private updateDemoData() {
+    this.data.faceDetected = true;
+    this.data.aiBackendStatus = 'CONNECTED';
+
+    // Basic jitter for realism
+    if (this.data.fatigueState === 'NORMAL') {
+      this.data.headPose.yaw = 2.4 + (Math.random() - 0.5) * 2;
+      this.data.headPose.pitch = -1.2 + (Math.random() - 0.5) * 1;
+      this.data.headPose.roll = 0.8 + (Math.random() - 0.5) * 0.5;
+      
+      // Random blinks
+      if (Math.random() > 0.98) {
+        this.data.leftEye = 'closed';
+        this.data.rightEye = 'closed';
+        setTimeout(() => {
+          this.data.leftEye = 'open';
+          this.data.rightEye = 'open';
+        }, 150);
+      } else {
+        this.data.leftEye = 'open';
+        this.data.rightEye = 'open';
+      }
+    }
+    
+    this.data.timestamp = new Date().toISOString();
+  }
+
+  public simulateEvent(event: 'blink' | 'yawn' | 'longEyeClosure' | 'lookingAway' | 'drowsy' | 'critical' | 'normal') {
+    if(PI_LIVE) return;
+    if (this.settings.mode !== 'DEMO') return;
+
+    switch (event) {
+      case 'normal':
+        this.data.fatigueScore = 18;
+        this.data.fatigueState = 'NORMAL';
+        this.data.leftEye = 'open';
+        this.data.rightEye = 'open';
+        this.data.mouthState = 'normal';
+        this.data.lookingAway = false;
+        this.data.perclos = 4.2;
+        this.data.headPose = { yaw: 2.4, pitch: -1.2, roll: 0.8 };
+        break;
+      case 'blink':
+        this.data.leftEye = 'closed';
+        this.data.rightEye = 'closed';
+        setTimeout(() => {
+          this.data.leftEye = 'open';
+          this.data.rightEye = 'open';
+          this.notify();
+        }, 200);
+        break;
+      case 'yawn':
+        this.data.mouthState = 'yawn';
+        this.data.yawnDetected = true;
+        this.data.yawnCount++;
+        this.data.yawnDuration = 4.2;
+        this.data.fatigueScore = Math.max(this.data.fatigueScore, 35);
+        this.data.fatigueState = 'ATTENTION';
+        setTimeout(() => {
+          this.data.mouthState = 'normal';
+          this.data.yawnDetected = false;
+          this.notify();
+        }, 4000);
+        break;
+      case 'longEyeClosure':
+        this.data.leftEye = 'closed';
+        this.data.rightEye = 'closed';
+        this.data.fatigueScore = 48;
+        this.data.fatigueState = 'ATTENTION';
+        setTimeout(() => {
+          this.data.leftEye = 'open';
+          this.data.rightEye = 'open';
+          this.notify();
+        }, 2500);
+        break;
+      case 'lookingAway':
+        this.data.lookingAway = true;
+        this.data.headPose.yaw = 42.5;
+        this.data.fatigueScore = Math.max(this.data.fatigueScore, 32);
+        this.data.fatigueState = 'ATTENTION';
+        setTimeout(() => {
+            this.data.lookingAway = false;
+            this.data.headPose.yaw = 2.4;
+            this.notify();
+        }, 4000);
+        break;
+      case 'drowsy':
+        this.data.fatigueScore = 62;
+        this.data.fatigueState = 'DROWSY';
+        this.data.perclos = 18.4;
+        this.data.leftEye = 'closed';
+        this.data.rightEye = 'closed';
+        setTimeout(() => {
+            this.data.leftEye = 'open';
+            this.data.rightEye = 'open';
+        }, 1000);
+        break;
+      case 'critical':
+        this.data.fatigueScore = 88;
+        this.data.fatigueState = 'CRITICAL';
+        this.data.perclos = 32.1;
+        this.data.leftEye = 'closed';
+        this.data.rightEye = 'closed';
+        break;
+    }
+    this.notify();
+  }
+}
+
+export const driverMonitoringService = new DriverMonitoringService();

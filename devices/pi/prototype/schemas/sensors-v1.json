@@ -1,0 +1,425 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "device_id": {
+      "type": "string"
+    },
+    "vehicle_id": {
+      "type": "string"
+    },
+    "boot_id": {
+      "type": "string"
+    },
+    "seq": {
+      "type": "integer"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "imu": {
+      "type": "object",
+      "properties": {
+        "lin_accel_x": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "lin_accel_y": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "lin_accel_z": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "gyro_x": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "gyro_y": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "gyro_z": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "quaternion": {
+          "type": "object",
+          "properties": {
+            "w": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "x": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "y": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "z": {
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "w",
+            "x",
+            "y",
+            "z"
+          ],
+          "additionalProperties": false
+        },
+        "received_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "waiting",
+            "stale",
+            "disconnected",
+            "invalid",
+            "unconfigured"
+          ]
+        }
+      },
+      "required": [
+        "lin_accel_x",
+        "lin_accel_y",
+        "lin_accel_z",
+        "gyro_x",
+        "gyro_y",
+        "gyro_z",
+        "quaternion",
+        "received_at",
+        "status"
+      ],
+      "additionalProperties": false
+    },
+    "ultrasonic": {
+      "type": "object",
+      "properties": {
+        "distance_mm": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "echo_us": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "received_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "waiting",
+            "stale",
+            "disconnected",
+            "invalid",
+            "unconfigured"
+          ]
+        }
+      },
+      "required": [
+        "distance_mm",
+        "echo_us",
+        "received_at",
+        "status"
+      ],
+      "additionalProperties": false
+    },
+    "rfid": {
+      "type": "object",
+      "properties": {
+        "card_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "last_scan_timestamp": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "waiting",
+            "stale",
+            "disconnected",
+            "invalid",
+            "unconfigured"
+          ]
+        }
+      },
+      "required": [
+        "card_id",
+        "last_scan_timestamp",
+        "status"
+      ],
+      "additionalProperties": false
+    },
+    "gps": {
+      "type": "object",
+      "properties": {
+        "latitude": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "longitude": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "accuracy_m": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "timestamp": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "received_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "waiting",
+            "stale",
+            "disconnected",
+            "invalid",
+            "unconfigured"
+          ]
+        }
+      },
+      "required": [
+        "latitude",
+        "longitude",
+        "accuracy_m",
+        "timestamp",
+        "received_at",
+        "status"
+      ],
+      "additionalProperties": false
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "esp_boot_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "esp_seq": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "esp_uptime_us": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "imu_seq": {
+          "type": "object",
+          "properties": {
+            "linear": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "gyro": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "rotation": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            }
+          },
+          "required": [
+            "linear",
+            "gyro",
+            "rotation"
+          ],
+          "additionalProperties": false
+        },
+        "imu_sample_us": {
+          "type": "object",
+          "properties": {
+            "linear": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "gyro": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "rotation": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            }
+          },
+          "required": [
+            "linear",
+            "gyro",
+            "rotation"
+          ],
+          "additionalProperties": false
+        },
+        "imu_report_status": {
+          "type": "object",
+          "properties": {
+            "linear": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "gyro": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "rotation": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            }
+          },
+          "required": [
+            "linear",
+            "gyro",
+            "rotation"
+          ],
+          "additionalProperties": false
+        },
+        "ultrasonic_seq": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "ultrasonic_sample_us": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "rfid_event_seq": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      },
+      "required": [
+        "esp_boot_id",
+        "esp_seq",
+        "esp_uptime_us",
+        "imu_seq",
+        "imu_sample_us",
+        "imu_report_status",
+        "ultrasonic_seq",
+        "ultrasonic_sample_us",
+        "rfid_event_seq"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schema_version",
+    "device_id",
+    "vehicle_id",
+    "boot_id",
+    "seq",
+    "timestamp",
+    "imu",
+    "ultrasonic",
+    "rfid",
+    "gps",
+    "source"
+  ],
+  "additionalProperties": false
+}
